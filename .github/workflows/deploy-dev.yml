@@ -1,9 +1,10 @@
-name: Deploy Dev
+name: Deploy
 
 on:
   push:
     branches:
       - dev
+      - main
 
 jobs:
   deploy:
@@ -38,26 +39,34 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
             set -e
+            
+            if [ "${{ github.ref_name }}" = "main" ]; then
+              NS="prod"
+            else
+              NS="dev"
+            fi
 
             IMAGE="ghcr.io/apulatjonov/mytestapp:${{ github.sha }}"
             URL="http://95.182.118.251.nip.io"
+            
+            echo "Deploying to namespace: $NS"
 
-            sudo kubectl set image deployment/test test=$IMAGE -n dev
+            sudo kubectl set image deployment/test test=$IMAGE -n $NS
 
-            if ! sudo kubectl rollout status deployment/test -n dev --timeout=120s; then
-              sudo kubectl rollout undo deployment/test -n dev
+            if ! sudo kubectl rollout status deployment/test -n $NS --timeout=120s; then
+              sudo kubectl rollout undo deployment/test -n $NS
               exit 1
             fi
 
             if ! curl -f $URL/api/ping; then
               echo "Ping failed -> rollback"
-              sudo kubectl rollout undo deployment/test -n dev
+              sudo kubectl rollout undo deployment/test -n $NS
               exit 1
             fi
 
             if ! curl -f $URL/actuator/health; then
               echo "Health failed -> rollback"
-              sudo kubectl rollout undo deployment/test -n dev
+              sudo kubectl rollout undo deployment/test -n $NS
               exit 1
             fi
 
