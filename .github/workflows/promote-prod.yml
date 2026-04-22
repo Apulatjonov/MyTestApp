@@ -1,0 +1,34 @@
+name: Promote To Prod
+
+on:
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: "Image SHA tag to deploy"
+        required: true
+
+jobs:
+  deploy-prod:
+    runs-on: ubuntu-latest
+    environment: production
+
+    steps:
+      - name: Deploy Chosen Image
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            set -e
+
+            IMAGE="ghcr.io/apulatjonov/mytestapp:${{ github.event.inputs.image_tag }}"
+
+            echo "Promoting $IMAGE to prod"
+
+            sudo kubectl set image deployment/test test=$IMAGE -n prod
+
+            if ! sudo kubectl rollout status deployment/test -n prod --timeout=120s; then
+              sudo kubectl rollout undo deployment/test -n prod
+              exit 1
+            fi
