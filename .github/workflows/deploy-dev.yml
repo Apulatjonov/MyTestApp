@@ -30,7 +30,7 @@ jobs:
       - name: Push Image
         run: docker push $IMAGE_NAME:$TAG
 
-      - name: Deploy With Rollback Protection
+      - name: Deploy With Full Protection
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
@@ -40,16 +40,25 @@ jobs:
             set -e
 
             IMAGE="ghcr.io/apulatjonov/mytestapp:${{ github.sha }}"
-
-            echo "Deploying $IMAGE"
+            URL="http://95.182.118.251.nip.io"
 
             sudo kubectl set image deployment/test test=$IMAGE -n dev
 
-            if sudo kubectl rollout status deployment/test -n dev --timeout=120s; then
-              echo "Deployment successful"
-            else
-              echo "Deployment failed. Rolling back..."
+            if ! sudo kubectl rollout status deployment/test -n dev --timeout=120s; then
               sudo kubectl rollout undo deployment/test -n dev
-              sudo kubectl rollout status deployment/test -n dev --timeout=120s
               exit 1
             fi
+
+            if ! curl -f $URL/api/ping; then
+              echo "Ping failed -> rollback"
+              sudo kubectl rollout undo deployment/test -n dev
+              exit 1
+            fi
+
+            if ! curl -f $URL/actuator/health; then
+              echo "Health failed -> rollback"
+              sudo kubectl rollout undo deployment/test -n dev
+              exit 1
+            fi
+
+            echo "Deployment fully successful"
