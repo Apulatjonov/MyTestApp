@@ -13,6 +13,10 @@ jobs:
       contents: read
       packages: write
 
+    env:
+      IMAGE_NAME: ghcr.io/apulatjonov/mytestapp
+      IMAGE_TAG: ${{ github.sha }}
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -21,19 +25,16 @@ jobs:
         uses: actions/setup-java@v4
         with:
           java-version: '21'
-          distribution: 'temurin'
-
-      - name: Build JAR
-        run: mvn clean package -DskipTests
+          distribution: temurin
 
       - name: Login GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u apulatjonov --password-stdin
 
-      - name: Build Image
-        run: docker build -t ghcr.io/apulatjonov/mytestapp:dev .
+      - name: Build Docker Image
+        run: docker build --pull -t $IMAGE_NAME:$IMAGE_TAG .
 
-      - name: Push Image
-        run: docker push ghcr.io/apulatjonov/mytestapp:dev
+      - name: Push Docker Image
+        run: docker push $IMAGE_NAME:$IMAGE_TAG
 
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1.0.3
@@ -42,6 +43,6 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            sudo kubectl get nodes
-            sudo kubectl rollout restart deployment/test -n dev
-            sudo kubectl rollout status deployment/test -n dev
+            sudo kubectl set image deployment/test test=$IMAGE_NAME:$IMAGE_TAG -n dev
+            sudo kubectl rollout status deployment/test -n dev --timeout=180s
+            sudo kubectl get pods -n dev
