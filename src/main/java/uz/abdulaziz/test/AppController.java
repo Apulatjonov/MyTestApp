@@ -10,8 +10,7 @@ public class AppController {
 
     @GetMapping("/ping")
     public String ping() {
-        throw new RuntimeException();
-//        return "pong";
+        return "pong";
     }
 
     @GetMapping("/version")
