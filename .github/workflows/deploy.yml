@@ -1,14 +1,11 @@
-name: Deploy
+name: Deploy Dev
 
 on:
   push:
-    branches:
-      - dev
-      - main
+    branches: [dev]
 
 jobs:
-  deploy-dev:
-    if: github.ref_name == 'dev'
+  deploy:
     runs-on: ubuntu-latest
 
     permissions:
@@ -27,115 +24,39 @@ jobs:
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u apulatjonov --password-stdin
 
       - name: Build Image
-        run: docker build --pull -t $IMAGE_NAME:$TAG .
+        run: docker build -t $IMAGE_NAME:$TAG .
 
       - name: Push Image
         run: docker push $IMAGE_NAME:$TAG
 
-      - name: Deploy With Full Protection
+      - name: Inject image tag
+        run: |
+          sed -i "s|IMAGE_PLACEHOLDER|$IMAGE_NAME:$TAG|g" k8s/dev/deployment.yaml
+
+      - name: Deploy manifests
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            set -e
-            
-            if [ "${{ github.ref_name }}" = "main" ]; then
-              NS="prod"
-            else
-              NS="dev"
-            fi
+            mkdir -p /opt/apps/mytestapp
 
-            IMAGE="ghcr.io/apulatjonov/mytestapp:${{ github.sha }}"
-            URL="http://95.182.118.251.nip.io"
-            
-            echo "Deploying to namespace: $NS"
+      - name: Copy manifests
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          source: "k8s/dev/*"
+          target: "/opt/apps/mytestapp"
 
-            sudo kubectl set image deployment/test test=$IMAGE -n $NS
-
-            if ! sudo kubectl rollout status deployment/test -n $NS --timeout=120s; then
-              sudo kubectl rollout undo deployment/test -n $NS
-              exit 1
-            fi
-
-            if ! curl -f $URL/api/ping; then
-              echo "Ping failed -> rollback"
-              sudo kubectl rollout undo deployment/test -n $NS
-              exit 1
-            fi
-
-            if ! curl -f $URL/actuator/health; then
-              echo "Health failed -> rollback"
-              sudo kubectl rollout undo deployment/test -n $NS
-              exit 1
-            fi
-
-            echo "Deployment fully successful"
-
-  deploy-prod:
-    if: github.ref_name == 'main'
-    runs-on: ubuntu-latest
-    environment: production
-
-    permissions:
-      contents: read
-      packages: write
-
-    env:
-      IMAGE_NAME: ghcr.io/apulatjonov/mytestapp
-      TAG: ${{ github.sha }}
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Login GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u apulatjonov --password-stdin
-
-      - name: Build Image
-        run: docker build --pull -t $IMAGE_NAME:$TAG .
-
-      - name: Push Image
-        run: docker push $IMAGE_NAME:$TAG
-
-      - name: Deploy With Full Protection
+      - name: Apply manifests
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            set -e
-
-            if [ "${{ github.ref_name }}" = "main" ]; then
-              NS="prod"
-            else
-              NS="dev"
-            fi
-
-            IMAGE="ghcr.io/apulatjonov/mytestapp:${{ github.sha }}"
-            URL="http://95.182.118.251.nip.io"
-
-            echo "Deploying to namespace: $NS"
-
-            sudo kubectl set image deployment/test test=$IMAGE -n $NS
-
-            if ! sudo kubectl rollout status deployment/test -n $NS --timeout=120s; then
-              sudo kubectl rollout undo deployment/test -n $NS
-              exit 1
-            fi
-
-            if ! curl -f $URL/api/ping; then
-              echo "Ping failed -> rollback"
-              sudo kubectl rollout undo deployment/test -n $NS
-              exit 1
-            fi
-
-            if ! curl -f $URL/actuator/health; then
-              echo "Health failed -> rollback"
-              sudo kubectl rollout undo deployment/test -n $NS
-              exit 1
-            fi
-
-            echo "Deployment fully successful"
+            kubectl apply -f /opt/apps/mytestapp/k8s/dev/
+            kubectl rollout status deployment/test -n dev --timeout=120s
