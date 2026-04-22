@@ -42,4 +42,6 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            kubectl rollout restart deployment/test -n dev
+            sudo kubectl get nodes
+            sudo kubectl rollout restart deployment/test -n dev
+            sudo kubectl rollout status deployment/test -n dev
