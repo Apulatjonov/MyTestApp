@@ -15,34 +15,39 @@ jobs:
 
     env:
       IMAGE_NAME: ghcr.io/apulatjonov/mytestapp
-      IMAGE_TAG: ${{ github.sha }}
+      TAG: ${{ github.sha }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: temurin
-
       - name: Login GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u apulatjonov --password-stdin
 
-      - name: Build Docker Image
-        run: docker build --pull -t $IMAGE_NAME:$IMAGE_TAG .
+      - name: Build Image
+        run: docker build --pull -t $IMAGE_NAME:$TAG .
 
-      - name: Push Docker Image
-        run: docker push $IMAGE_NAME:$IMAGE_TAG
+      - name: Push Image
+        run: docker push $IMAGE_NAME:$TAG
 
-      - name: Deploy to VPS
+      - name: Deploy With Rollback Protection
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            sudo kubectl set image deployment/test test=$IMAGE_NAME:$IMAGE_TAG -n dev
-            sudo kubectl rollout status deployment/test -n dev --timeout=180s
-            sudo kubectl get pods -n dev
+            set -e
+
+            echo "Deploying $IMAGE_NAME:$TAG"
+
+            sudo kubectl set image deployment/test test=$IMAGE_NAME:$TAG -n dev
+
+            if sudo kubectl rollout status deployment/test -n dev --timeout=120s; then
+              echo "Deployment successful"
+            else
+              echo "Deployment failed. Rolling back..."
+              sudo kubectl rollout undo deployment/test -n dev
+              sudo kubectl rollout status deployment/test -n dev --timeout=120s
+              exit 1
+            fi
