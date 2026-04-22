@@ -38,15 +38,27 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
             set -e
+            
+            IMAGE=ghcr.io/apulatjonov/mytestapp:${{ github.sha }}
 
             echo "Deploying $IMAGE_NAME:$TAG"
 
             sudo kubectl set image deployment/test test=$IMAGE_NAME:$TAG -n dev
-
+            
             if sudo kubectl rollout status deployment/test -n dev --timeout=120s; then
-              echo "Deployment successful"
+              echo "Pods ready"
             else
-              echo "Deployment failed. Rolling back..."
+              echo "Rollout failed"
+              sudo kubectl rollout undo deployment/test -n dev
+              exit 1
+            fi
+
+            echo "Running smoke test..."
+
+            if curl -f http://95.182.118.251.nip.io/api/ping; then
+              echo "Smoke test passed"
+            else
+              echo "Smoke test failed. Rolling back..."
               sudo kubectl rollout undo deployment/test -n dev
               sudo kubectl rollout status deployment/test -n dev --timeout=120s
               exit 1
