@@ -38,12 +38,12 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
             set -e
-            
-            IMAGE=ghcr.io/apulatjonov/mytestapp:${{ github.sha }}
 
-            echo "Deploying $IMAGE_NAME:$TAG"
+            IMAGE="ghcr.io/apulatjonov/mytestapp:${{ github.sha }}"
 
-            sudo kubectl set image deployment/test test=$IMAGE_NAME:$TAG -n dev
+            echo "Deploying $IMAGE"
+
+            sudo kubectl set image deployment/test test=$IMAGE -n dev
 
             if sudo kubectl rollout status deployment/test -n dev --timeout=120s; then
               echo "Deployment successful"
